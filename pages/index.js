@@ -920,10 +920,10 @@ function SettingsPanel({ settings, setSettings }) {
       <Field label="Spotify-Playlist (Link)">
         <input className="inp" value={draft.spotify} onChange={(e) => set("spotify", e.target.value)} placeholder="https://open.spotify.com/…" />
       </Field>
-      <Field label="Foto-Link „Erinnerungsfotos vorab"">
+      <Field label={'Foto-Link „Erinnerungsfotos vorab“'}>
         <input className="inp" value={draft.fotoVorher} onChange={(e) => set("fotoVorher", e.target.value)} placeholder="https://photos.app.goo.gl/…" />
       </Field>
-      <Field label="Foto-Link „Fotos vom Fest"">
+      <Field label={'Foto-Link „Fotos vom Fest“'}>
         <input className="inp" value={draft.fotoTag} onChange={(e) => set("fotoTag", e.target.value)} placeholder="https://photos.app.goo.gl/…" />
       </Field>
       <Field label="ARCOTEL — Buchungslink" hint="vorausgefüllt: E-Mail ans Reservierungsteam">
