@@ -82,8 +82,8 @@ const DEFAULT_SETTINGS = {
     "mailto:office@city-hotel.cc" +
     "?subject=" + encodeURIComponent("Zimmerreservierung 29.–30.08.2026") +
     "&body=" + encodeURIComponent(MAIL_BODY_CITY),
-  cityEz: "100",
-  cityDz: "120",
+  cityEz: "110",
+  cityDz: "130",
   giftText:
     "Das größte Geschenk seid ihr — eure Anwesenheit und gemeinsame Erlebnisse. Wer trotzdem etwas mitbringen möchte: ein Gutschein für eine gemeinsame Aktion (Wandern, Brunch, Konzert, ein Bier nach Feierabend).",
 };
@@ -487,8 +487,8 @@ function HotelOptions({ settings }) {
             <li><span>Doppelzimmer</span><span>€ {settings.cityDz || "120"},– / Nacht</span></li>
           </ul>
           <p className="note">
-            Preise pro Zimmer, exkl. Frühstück. Hier kannst du direkt
-            reservieren:
+            Preise pro Zimmer, Brunch bei uns zu Hause, wenn wir
+            ausgeschlafen sind.
           </p>
           <BookLink url={settings.moedlingReserveLink} label="Zimmer reservieren" />
         </div>
