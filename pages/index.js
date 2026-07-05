@@ -307,19 +307,19 @@ function InfoPage({ settings, onAdmin, loaded }) {
           <div className="cards">
             <LinkCard
               title="Spotify-Playlist"
-              desc="Füg deine Lieblingssongs hinzu — ich spiele sie am Fest."
+              desc="Welcher Song darf bei unserer Feier nicht fehlen? Trag ihn in diese gemeinsame Playlist ein!"
               url={settings.spotify}
               cta="Playlist öffnen"
             />
             <LinkCard
               title="Erinnerungsfotos vorab"
-              desc="Lade alte Fotos hoch, die ich am Tag zeige."
+              desc="Hast du ein schönes oder lustiges Erinnerungsfoto von uns? Lade es hier hoch."
               url={settings.fotoVorher}
               cta="Fotos hochladen"
             />
             <LinkCard
               title="Fotos vom Fest"
-              desc="Mach am Tag Fotos und lade sie hier hoch."
+              desc="Halte die schönsten Momente vom Tag fest und lade sie hier hoch."
               url={settings.fotoTag}
               cta="Fotos teilen"
             />
