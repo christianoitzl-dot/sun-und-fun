@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import Head from "next/head";
 
 /*
   Sun & Fun am Kaiserwasser — Event-Seite + Anmeldung + Admin
-  v15: Farbschema "Seeglas" (fix), heller/dunkler Modus umschaltbar.
+  v14: Farbschema "Seeglas" (fix), heller/dunkler Modus umschaltbar.
   Admin-Passwort: 3246
 */
 
@@ -88,59 +87,35 @@ const DEFAULT_SETTINGS = {
     "Das größte Geschenk seid ihr — eure Anwesenheit und gemeinsame Erlebnisse. Wer trotzdem etwas mitbringen möchte: ein Gutschein für eine gemeinsame Aktion (Wandern, Brunch, Konzert, ein Bier nach Feierabend).",
 };
 
-// ---------- API-Hilfsfunktionen (Neon Postgres über /api/*) ----------
-async function apiGetSettings() {
+// ---------- Storage Helpers ----------
+async function safeGet(key, shared = true) {
   try {
-    const r = await fetch("/api/settings");
-    if (!r.ok) return null;
-    return await r.json();
+    const r = await window.storage.get(key, shared);
+    return r ? r.value : null;
   } catch {
     return null;
   }
 }
-
-async function apiSaveSettings(value) {
+async function safeSet(key, value, shared = true) {
   try {
-    const r = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(value),
-    });
-    return r.ok;
+    await window.storage.set(key, value, shared);
+    return true;
   } catch {
     return false;
   }
 }
-
-async function apiGetRegistrations() {
+async function safeList(prefix, shared = true) {
   try {
-    const r = await fetch("/api/registrations");
-    if (!r.ok) return [];
-    return await r.json();
+    const r = await window.storage.list(prefix, shared);
+    return r && r.keys ? r.keys : [];
   } catch {
     return [];
   }
 }
-
-async function apiSaveRegistration(record) {
+async function safeDelete(key, shared = true) {
   try {
-    const r = await fetch("/api/registrations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function apiDeleteRegistration(id) {
-  try {
-    const r = await fetch("/api/registrations?id=" + encodeURIComponent(id), {
-      method: "DELETE",
-    });
-    return r.ok;
+    await window.storage.delete(key, shared);
+    return true;
   } catch {
     return false;
   }
@@ -148,14 +123,20 @@ async function apiDeleteRegistration(id) {
 
 // Zählt je Sportart, wie viele Zusagen sich angemeldet haben
 async function loadSportCounts() {
-  const regs = await apiGetRegistrations();
   const counts = {};
-  regs.forEach((r) => {
-    if (r.attending === "yes") {
-      const sc = r.sportCounts || {};
-      Object.keys(sc).forEach((id) => (counts[id] = (counts[id] || 0) + (Number(sc[id]) || 0)));
+  const keys = await safeList("reg:", true);
+  for (const k of keys) {
+    const v = await safeGet(k, true);
+    if (v) {
+      try {
+        const r = JSON.parse(v);
+        if (r.attending === "yes") {
+          const sc = r.sportCounts || {};
+          Object.keys(sc).forEach((id) => (counts[id] = (counts[id] || 0) + (Number(sc[id]) || 0)));
+        }
+      } catch {}
     }
-  });
+  }
   return counts;
 }
 
@@ -167,40 +148,29 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const s = await apiGetSettings();
-      const merged = { ...DEFAULT_SETTINGS, ...(s || {}) };
-      // Einmalige Migration: die zwei Hotel-Mail-Links auf die neuen v15-Vorlagen setzen,
-      // ohne andere bereits gespeicherte Werte (z.B. Spotify-Link) zu verlieren.
-      if (!merged.hotelLinksV15) {
-        merged.arcotelLink = DEFAULT_SETTINGS.arcotelLink;
-        merged.moedlingReserveLink = DEFAULT_SETTINGS.moedlingReserveLink;
-        merged.hotelLinksV15 = true;
-        await apiSaveSettings(merged);
+      const s = await safeGet("settings", true);
+      if (s) {
+        try {
+          setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+        } catch {}
       }
-      setSettings(merged);
       setLoaded(true);
     })();
   }, []);
 
   return (
-    <>
-      <Head>
-        <title>Sun &amp; Fun am Kaiserwasser · 29. August 2026</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </Head>
-      <div className="kw-root" data-theme="a" data-mode={mode}>
-        <style>{CSS}</style>
+    <div className="kw-root" data-theme="a" data-mode={mode}>
+      <style>{CSS}</style>
 
-        <ThemeSwitcher mode={mode} setMode={setMode} />
+      <ThemeSwitcher mode={mode} setMode={setMode} />
 
-        {view === "info" && (
-          <InfoPage settings={settings} onAdmin={() => setView("admin")} loaded={loaded} />
-        )}
-        {view === "admin" && (
-          <AdminPage settings={settings} setSettings={setSettings} onBack={() => setView("info")} />
-        )}
-      </div>
-    </>
+      {view === "info" && (
+        <InfoPage settings={settings} onAdmin={() => setView("admin")} loaded={loaded} />
+      )}
+      {view === "admin" && (
+        <AdminPage settings={settings} setSettings={setSettings} onBack={() => setView("info")} />
+      )}
+    </div>
   );
 }
 
@@ -571,7 +541,7 @@ function RegistrationForm({ loaded, settings, onSubmitted }) {
       stay: f.attending === "yes" ? f.stay : "",
       message: f.message.trim(),
     };
-    const ok = await apiSaveRegistration(record);
+    const ok = await safeSet("reg:" + id, JSON.stringify(record), true);
     if (ok && onSubmitted) onSubmitted();
     setStatus(ok ? "done" : "error");
   }
@@ -828,7 +798,17 @@ function AdminDashboard({ settings, setSettings, onBack }) {
 
   async function load() {
     setLoading(true);
-    const out = await apiGetRegistrations();
+    const keys = await safeList("reg:", true);
+    const out = [];
+    for (const k of keys) {
+      const v = await safeGet(k, true);
+      if (v) {
+        try {
+          out.push(JSON.parse(v));
+        } catch {}
+      }
+    }
+    out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
     setRegs(out);
     setLoading(false);
   }
@@ -839,7 +819,7 @@ function AdminDashboard({ settings, setSettings, onBack }) {
 
   async function removeReg(id) {
     if (!window.confirm("Diese Anmeldung wirklich löschen?")) return;
-    await apiDeleteRegistration(id);
+    await safeDelete("reg:" + id, true);
     setRegs((p) => p.filter((r) => r.id !== id));
   }
 
@@ -935,7 +915,7 @@ function AdminDashboard({ settings, setSettings, onBack }) {
       new Date(r.ts).toLocaleString("de-AT"),
     ]);
     const csv = [head, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1152,7 +1132,7 @@ function SettingsPanel({ settings, setSettings }) {
   };
 
   async function save() {
-    await apiSaveSettings(draft);
+    await safeSet("settings", JSON.stringify(draft), true);
     setSettings(draft);
     setSaved(true);
   }
@@ -1200,7 +1180,7 @@ function SettingsPanel({ settings, setSettings }) {
 }
 
 // =====================================================
-//  STYLES  — klar & modern, Farbschema "Seeglas"
+//  STYLES  — klar & modern, Farbschema "Seeglas" 
 // =====================================================
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap');
