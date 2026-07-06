@@ -247,8 +247,7 @@ function InfoPage({ settings, onAdmin, loaded }) {
             gehen jederzeit.
           </p>
           <p className="lead">
-            Übersicht über den bisherigen Anmeldestand — deine Auswahl
-            triffst du unten bei der Anmeldung.
+            Bisheriger Anmeldestand — Auswahl bei der Anmeldung.
           </p>
           <div className="sportlist">
             {SPORTS.map((s) => {
