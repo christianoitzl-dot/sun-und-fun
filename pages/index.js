@@ -244,8 +244,11 @@ function InfoPage({ settings, onAdmin, loaded }) {
           <p className="lead">
             Die ganze Anlage steht uns offen — Wasser, Beach, Tennis und
             Fußball. Baden im Kaiserwasser und Chillen auf der Liegewiese
-            gehen jederzeit. Was du sportlich nutzen möchtest, gibst du bei
-            der Anmeldung an, damit ich alles reservieren kann.
+            gehen jederzeit.
+          </p>
+          <p className="lead">
+            Übersicht über den bisherigen Anmeldestand — deine Auswahl
+            triffst du unten bei der Anmeldung.
           </p>
           <div className="sportlist">
             {SPORTS.map((s) => {
@@ -1278,6 +1281,7 @@ const CSS = `
 .eyebrow{font-weight:600;text-transform:uppercase;letter-spacing:.14em;font-size:12px;color:var(--accent)}
 .section-head h2{font-family:var(--font-d);font-weight:800;font-size:clamp(26px,5vw,38px);margin:6px 0 0;line-height:1.05;letter-spacing:-.01em}
 .lead{font-size:17px;line-height:1.55;margin:0 0 18px;max-width:60ch}
+.lead + .lead{margin-top:22px}
 .note{font-size:14px;color:var(--muted);margin:12px 0 0}
 .note a{color:var(--accent);text-decoration:none;font-weight:600;word-break:break-word}
 .note a:hover{text-decoration:underline}
