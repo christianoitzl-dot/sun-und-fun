@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Head from "next/head";
+import Image from "next/image";
 import { upload } from "@vercel/blob/client";
 
 /*
@@ -202,7 +203,7 @@ async function uploadPhotoFile(file, category, uploader, onProgress) {
     access: "public",
     handleUploadUrl: "/api/upload",
     clientPayload: JSON.stringify({ category }),
-    onUploadProgress: (p) => onProgress && onProgress(p.percentage),
+    onUploadProgress: (p) => onProgress && onProgress(p),
   });
   await apiSavePhoto({ url: blob.url, category, filename: file.name, uploader });
   return blob;
@@ -618,18 +619,47 @@ function PhotoUploadCard({ category, title, desc, cta, uploaderName, setUploader
     setTotal(files.length);
     setDone(0);
     setProgress(0);
+
+    // Mehrere Fotos gleichzeitig hochladen (statt nacheinander) — deutlich
+    // schneller bei mehreren Dateien. Fortschritt wird über die tatsächlich
+    // übertragenen Bytes aller Dateien berechnet, damit die Prozentzahl auch
+    // bei parallelen Uploads stimmt (nicht nur die der zuletzt gestarteten Datei).
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    const loadedByFile = new Array(files.length).fill(0);
+    const updateProgress = () => {
+      const loaded = loadedByFile.reduce((a, b) => a + b, 0);
+      setProgress(totalBytes > 0 ? Math.round((loaded / totalBytes) * 100) : 0);
+    };
+
     let successCount = 0;
     const failures = [];
-    for (const file of files) {
-      try {
-        await uploadPhotoFile(file, category, uploaderName.trim(), setProgress);
-        successCount += 1;
-      } catch (err) {
-        failures.push({ name: file.name, reason: friendlyUploadError(err) });
+    let doneCount = 0;
+    let nextIndex = 0;
+    const CONCURRENCY = 3;
+
+    async function worker() {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= files.length) return;
+        const file = files[i];
+        try {
+          await uploadPhotoFile(file, category, uploaderName.trim(), (p) => {
+            loadedByFile[i] = p.loaded;
+            updateProgress();
+          });
+          successCount += 1;
+        } catch (err) {
+          failures.push({ name: file.name, reason: friendlyUploadError(err) });
+        }
+        loadedByFile[i] = file.size;
+        updateProgress();
+        doneCount += 1;
+        setDone(doneCount);
       }
-      setDone((d) => d + 1);
-      setProgress(0);
     }
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, worker));
+
     setBusy(false);
     setResult({ successCount, total: files.length, failures, skippedCount });
     if (inputRef.current) inputRef.current.value = "";
@@ -879,7 +909,14 @@ function AdminPhotos() {
                 <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
               </label>
               <a href={p.url} target="_blank" rel="noreferrer" className="gallery-item">
-                <img src={p.url} alt={p.filename || "Foto"} loading="lazy" />
+                <Image
+                  src={p.url}
+                  alt={p.filename || "Foto"}
+                  fill
+                  sizes="200px"
+                  style={{ objectFit: "cover" }}
+                  loading="lazy"
+                />
               </a>
               <button
                 type="button"
@@ -1827,8 +1864,7 @@ textarea.inp{resize:vertical}
 .sportcount-label{font-size:15px;font-weight:500;word-break:break-word;overflow-wrap:anywhere;hyphens:auto;min-width:0;flex:1}
 .sportcount-row .stepper{background:var(--surface);flex-shrink:0}
 .gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
-.gallery-item{display:block;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:1.5px solid var(--line-2)}
-.gallery-item img{width:100%;height:100%;object-fit:cover;display:block}
+.gallery-item{display:block;position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:1.5px solid var(--line-2)}
 .admin-photos{margin-top:6px}
 .admin-photo-item{position:relative}
 .admin-photo-item .photo-del{position:absolute;top:6px;right:6px;width:28px;height:28px;min-width:0;border:none;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
