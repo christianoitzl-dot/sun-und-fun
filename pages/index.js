@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Head from "next/head";
+import { upload } from "@vercel/blob/client";
 
 /*
   Sun & Fun am Kaiserwasser — Event-Seite + Anmeldung + Admin
-  v15: Farbschema "Seeglas" (fix), heller/dunkler Modus umschaltbar.
+  v16: Farbschema "Seeglas" (fix), heller/dunkler Modus umschaltbar.
+  Neu in v16: Foto-Upload direkt in der App (Vercel Blob, ohne Login),
+  Beachvolleyball-Zeile bricht auf schmalen Screens korrekt um.
   Admin-Passwort: 3246
 */
 
@@ -72,8 +75,6 @@ const MAIL_BODY_CITY = [
 
 const DEFAULT_SETTINGS = {
   spotify: "",
-  fotoVorher: "",
-  fotoTag: "",
   arcotelLink:
     "mailto:reservation.kaiserwasser@arcotel.com" +
     "?subject=" + encodeURIComponent("Zimmerreservierung Sun & Fun 29.–30.08.2026 (UNICREDITGROUP)") +
@@ -84,6 +85,7 @@ const DEFAULT_SETTINGS = {
     "&body=" + encodeURIComponent(MAIL_BODY_CITY),
   cityEz: "110",
   cityDz: "130",
+  fotoAlbumLink: "",
   giftText:
     "Das größte Geschenk seid ihr — eure Anwesenheit und gemeinsame Erlebnisse. Wer trotzdem etwas mitbringen möchte: ein Gutschein für eine gemeinsame Aktion (Wandern, Brunch, Konzert, ein Bier nach Feierabend).",
 };
@@ -120,6 +122,73 @@ async function apiGetRegistrations() {
   } catch {
     return [];
   }
+}
+
+// ---------- Foto-Upload (Vercel Blob) ----------
+async function apiGetPhotos(category) {
+  try {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : "";
+    const r = await fetch(`/api/photos${qs}`);
+    if (!r.ok) return [];
+    return await r.json();
+  } catch {
+    return [];
+  }
+}
+
+// Wirft bei Fehlschlag (statt ihn zu verschlucken), damit ein Fehlschlag beim
+// Speichern der Metadaten nicht als "erfolgreicher" Upload durchgeht — sonst
+// landet die Datei im Blob-Speicher, ohne dass es einen DB-Eintrag dafür gibt.
+async function apiSavePhoto({ url, category, filename, uploader }) {
+  const r = await fetch("/api/photos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, category, filename, uploader }),
+  });
+  if (!r.ok) {
+    let message = "Speichern der Foto-Daten ist fehlgeschlagen.";
+    try {
+      const data = await r.json();
+      if (data && data.error) message = data.error;
+    } catch {}
+    throw new Error(message);
+  }
+}
+
+async function apiDeletePhoto(id) {
+  try {
+    const r = await fetch("/api/photos?id=" + encodeURIComponent(id), {
+      method: "DELETE",
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function apiDeletePhotos(ids) {
+  try {
+    const r = await fetch("/api/photos?ids=" + encodeURIComponent(ids.join(",")), {
+      method: "DELETE",
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Lädt eine einzelne Datei direkt zu Vercel Blob hoch (Client Upload, umgeht
+// das 4,5-MB-Limit von Serverless Functions) und speichert danach die
+// Metadaten (URL, Kategorie, Dateiname, Uploader) in Neon über /api/photos.
+async function uploadPhotoFile(file, category, uploader, onProgress) {
+  const blob = await upload(`${category}/${Date.now()}-${file.name}`, file, {
+    access: "public",
+    handleUploadUrl: "/api/upload",
+    clientPayload: JSON.stringify({ category }),
+    onUploadProgress: (p) => onProgress && onProgress(p.percentage),
+  });
+  await apiSavePhoto({ url: blob.url, category, filename: file.name, uploader });
+  return blob;
 }
 
 async function apiSaveRegistration(record) {
@@ -189,7 +258,7 @@ export default function App() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <div className="kw-root" data-theme="a" data-mode={mode}>
-        <style>{CSS}</style>
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
         <ThemeSwitcher mode={mode} setMode={setMode} />
 
@@ -228,6 +297,23 @@ function InfoPage({ settings, onAdmin, loaded }) {
   useEffect(() => {
     reloadCounts();
   }, []);
+
+  // Ein gemeinsamer Name für beide Foto-Upload-Karten, damit man ihn nicht
+  // zweimal eingeben muss; wird lokal gemerkt, damit er bei erneutem Besuch
+  // schon ausgefüllt ist.
+  const [uploaderName, setUploaderNameState] = useState("");
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("kw_uploader_name");
+      if (saved) setUploaderNameState(saved);
+    } catch {}
+  }, []);
+  const setUploaderName = (v) => {
+    setUploaderNameState(v);
+    try {
+      window.localStorage.setItem("kw_uploader_name", v);
+    } catch {}
+  };
 
   return (
     <div className="page">
@@ -313,19 +399,27 @@ function InfoPage({ settings, onAdmin, loaded }) {
               url={settings.spotify}
               cta="Playlist öffnen"
             />
-            <LinkCard
+          </div>
+          <div className="cards" style={{ marginTop: 14 }}>
+            <PhotoUploadCard
+              category="vorher"
               title="Erinnerungsfotos vorab"
-              desc="Hast du ein schönes oder lustiges Erinnerungsfoto von uns? Lade es hier hoch."
-              url={settings.fotoVorher}
+              desc="Hast du schöne oder lustige Erinnerungsfotos von uns? Lade sie direkt hier hoch."
               cta="Fotos hochladen"
-            />
-            <LinkCard
-              title="Fotos vom Fest"
-              desc="Halte die schönsten Momente vom Tag fest und lade sie hier hoch."
-              url={settings.fotoTag}
-              cta="Fotos teilen"
+              uploaderName={uploaderName}
+              setUploaderName={setUploaderName}
             />
           </div>
+          {settings.fotoAlbumLink && settings.fotoAlbumLink.trim() && (
+            <div className="cards" style={{ marginTop: 14 }}>
+              <LinkCard
+                title="Fotos vom Fest"
+                desc="Alle Erinnerungsfotos vom Tag — zum Ansehen und Herunterladen."
+                url={settings.fotoAlbumLink}
+                cta="Fotos ansehen"
+              />
+            </div>
+          )}
         </Section>
 
         <Section eyebrow="Bist du dabei?" title="Jetzt anmelden">
@@ -445,6 +539,314 @@ function LinkCard({ title, desc, url, cta }) {
         <span className="btn btn-ghost" aria-disabled="true">
           Link folgt
         </span>
+      )}
+    </div>
+  );
+}
+
+// Übersetzt die technischen (englischen) Fehlermeldungen des Vercel-Blob-SDK
+// in verständliche deutsche Sätze für die häufigsten Fälle; alles andere
+// zeigt die Original-Meldung als Fallback.
+function friendlyUploadError(err) {
+  const msg = (err && err.message) || "";
+  if (/^File is too large/i.test(msg)) return "Datei ist zu groß (max. 50 MB).";
+  if (/^Content type mismatch/i.test(msg)) return "Dieses Dateiformat wird nicht unterstützt.";
+  if (/Failed to fetch|fetch failed/i.test(msg)) return "Netzwerkproblem — bitte nochmal versuchen.";
+  return msg || "Unbekannter Fehler.";
+}
+
+function PhotoUploadCard({ category, title, desc, cta, uploaderName, setUploaderName }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [result, setResult] = useState(null); // { successCount, total, failures: [{name, reason}] }
+  const [asking, setAsking] = useState(false);
+  const [draftName, setDraftName] = useState("");
+
+  const hasName = !!(uploaderName && uploaderName.trim());
+
+  function handleUploadClick() {
+    if (hasName) {
+      inputRef.current && inputRef.current.click();
+    } else {
+      setDraftName("");
+      setAsking(true);
+    }
+  }
+
+  function submitName(e) {
+    e.preventDefault();
+    const name = draftName.trim();
+    if (!name) return;
+    setUploaderName(name);
+    setAsking(false);
+    inputRef.current && inputRef.current.click();
+  }
+
+  async function handleFiles(fileList) {
+    const all = Array.from(fileList || []);
+    const files = all.filter((f) => f.type.startsWith("image/"));
+    const skippedCount = all.length - files.length;
+    if (files.length === 0) {
+      if (skippedCount > 0) {
+        setResult({ successCount: 0, total: 0, failures: [], skippedCount });
+      }
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    setTotal(files.length);
+    setDone(0);
+    setProgress(0);
+    let successCount = 0;
+    const failures = [];
+    for (const file of files) {
+      try {
+        await uploadPhotoFile(file, category, uploaderName.trim(), setProgress);
+        successCount += 1;
+      } catch (err) {
+        failures.push({ name: file.name, reason: friendlyUploadError(err) });
+      }
+      setDone((d) => d + 1);
+      setProgress(0);
+    }
+    setBusy(false);
+    setResult({ successCount, total: files.length, failures, skippedCount });
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  return (
+    <div className="card linkcard">
+      <h4>{title}</h4>
+      <p>{desc}</p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => handleFiles(e.target.files)}
+      />
+      {asking ? (
+        <form className="upload-ask" onSubmit={submitName}>
+          <input
+            className="inp"
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            placeholder="Dein Name"
+            autoFocus
+          />
+          <button type="submit" className="btn btn-accent">
+            Weiter
+          </button>
+        </form>
+      ) : (
+        <button type="button" className="btn btn-accent" disabled={busy} onClick={handleUploadClick}>
+          {busy ? `Lädt hoch … (${done}/${total}, ${progress}%)` : cta}
+        </button>
+      )}
+      {result && (
+        <div className="upload-result">
+          {result.total > 0 &&
+            (result.failures.length === 0 ? (
+              <p className="note upload-ok">
+                ✓ {result.successCount} von {result.total} Foto{result.total === 1 ? "" : "s"} erfolgreich
+                hochgeladen.
+              </p>
+            ) : (
+              <>
+                <p className="note upload-warn">
+                  {result.successCount > 0
+                    ? `⚠ ${result.successCount} von ${result.total} hochgeladen — ${result.failures.length} fehlgeschlagen:`
+                    : `✗ Hochladen fehlgeschlagen:`}
+                </p>
+                <ul className="upload-fail-list">
+                  {result.failures.map((f, i) => (
+                    <li key={i}>
+                      <strong>{f.name}:</strong> {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ))}
+          {result.skippedCount > 0 && (
+            <p className="note upload-skip">
+              ℹ {result.skippedCount} Datei{result.skippedCount === 1 ? "" : "en"} übersprungen — kein Bildformat.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =====================================================
+//  ADMIN — FOTOS
+// =====================================================
+function AdminPhotos() {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [nameSearch, setNameSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    const data = await apiGetPhotos();
+    setPhotos(Array.isArray(data) ? data : []);
+    setSelected(new Set());
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const shown = useMemo(() => {
+    const q = nameSearch.trim().toLowerCase();
+    if (!q) return photos;
+    return photos.filter((p) => (p.uploader || "").toLowerCase().includes(q));
+  }, [photos, nameSearch]);
+
+  async function removePhoto(id) {
+    if (!window.confirm("Dieses Foto wirklich löschen? Das kann nicht rückgängig gemacht werden.")) return;
+    setBusyId(id);
+    const ok = await apiDeletePhoto(id);
+    if (ok) {
+      setPhotos((p) => p.filter((x) => x.id !== id));
+      setSelected((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+    }
+    setBusyId(null);
+  }
+
+  function toggleSelect(id) {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((s) => {
+      const allSelected = shown.length > 0 && shown.every((p) => s.has(p.id));
+      if (allSelected) return new Set();
+      return new Set(shown.map((p) => p.id));
+    });
+  }
+
+  function downloadZip() {
+    // Bei aktivem Namensfilter nur die angezeigten Fotos zippen, damit die
+    // heruntergeladene Menge zur Button-Anzahl passt; sonst alle.
+    if (nameSearch.trim()) {
+      if (shown.length === 0) return;
+      window.location.href = `/api/photos-zip?ids=${shown.map((p) => p.id).join(",")}`;
+    } else {
+      window.location.href = "/api/photos-zip";
+    }
+  }
+
+  function downloadSelected() {
+    window.location.href = `/api/photos-zip?ids=${Array.from(selected).join(",")}`;
+  }
+
+  async function deleteSelected() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`${ids.length} Foto${ids.length === 1 ? "" : "s"} wirklich löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+    setBulkBusy(true);
+    const ok = await apiDeletePhotos(ids);
+    if (ok) {
+      setPhotos((p) => p.filter((x) => !selected.has(x.id)));
+      setSelected(new Set());
+    }
+    setBulkBusy(false);
+  }
+
+  const allShownSelected = shown.length > 0 && shown.every((p) => selected.has(p.id));
+
+  return (
+    <div className="admin-photos">
+      <div className="admin-filters">
+        <input
+          className="inp"
+          placeholder="Nach Name filtern…"
+          value={nameSearch}
+          onChange={(e) => setNameSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="admin-actions">
+        <button className="btn btn-accent" onClick={downloadZip} disabled={loading || shown.length === 0}>
+          Alle als ZIP ({shown.length})
+        </button>
+        <button className="btn btn-ghost" onClick={load}>
+          Aktualisieren
+        </button>
+      </div>
+
+      {!loading && shown.length > 0 && (
+        <div className="admin-actions select-bar">
+          <button className="btn btn-ghost" onClick={toggleSelectAll}>
+            {allShownSelected ? "Auswahl aufheben" : "Alle auswählen"}
+          </button>
+          <button
+            className="btn btn-accent"
+            onClick={downloadSelected}
+            disabled={selected.size === 0}
+          >
+            Auswahl herunterladen ({selected.size})
+          </button>
+          <button
+            className="btn btn-ghost btn-danger"
+            onClick={deleteSelected}
+            disabled={selected.size === 0 || bulkBusy}
+          >
+            Auswahl löschen ({selected.size})
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="muted">Lädt Fotos …</p>
+      ) : photos.length === 0 ? (
+        <div className="empty">Noch keine Fotos.</div>
+      ) : shown.length === 0 ? (
+        <div className="empty">Keine Treffer für diese Namenssuche.</div>
+      ) : (
+        <div className="gallery-grid">
+          {shown.map((p) => (
+            <div key={p.id} className={"admin-photo-item " + (selected.has(p.id) ? "is-selected" : "")}>
+              <label className="photo-select">
+                <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
+              </label>
+              <a href={p.url} target="_blank" rel="noreferrer" className="gallery-item">
+                <img src={p.url} alt={p.filename || "Foto"} loading="lazy" />
+              </a>
+              <button
+                type="button"
+                className="photo-del"
+                onClick={() => removePhoto(p.id)}
+                disabled={busyId === p.id}
+                title="Foto löschen"
+              >
+                ✕
+              </button>
+              <div className="photo-uploader" title={p.uploader || "Unbekannt"}>
+                {p.uploader || "Unbekannt"}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -959,6 +1361,9 @@ function AdminDashboard({ settings, setSettings, onBack }) {
         <button className={tab === "anmeldungen" ? "on" : ""} onClick={() => setTab("anmeldungen")}>
           Anmeldungen
         </button>
+        <button className={tab === "fotos" ? "on" : ""} onClick={() => setTab("fotos")}>
+          Fotos
+        </button>
         <button className={tab === "einstellungen" ? "on" : ""} onClick={() => setTab("einstellungen")}>
           Einstellungen
         </button>
@@ -1128,6 +1533,8 @@ function AdminDashboard({ settings, setSettings, onBack }) {
         </>
       )}
 
+      {tab === "fotos" && <AdminPhotos />}
+
       {tab === "einstellungen" && <SettingsPanel settings={settings} setSettings={setSettings} />}
     </div>
   );
@@ -1169,11 +1576,19 @@ function SettingsPanel({ settings, setSettings }) {
       <Field label="Spotify-Playlist (Link)">
         <input className="inp" value={draft.spotify} onChange={(e) => set("spotify", e.target.value)} placeholder="https://open.spotify.com/…" />
       </Field>
-      <Field label="Foto-Link „Erinnerungsfotos vorab“">
-        <input className="inp" value={draft.fotoVorher} onChange={(e) => set("fotoVorher", e.target.value)} placeholder="https://photos.app.goo.gl/…" />
-      </Field>
-      <Field label="Foto-Link „Fotos vom Fest“">
-        <input className="inp" value={draft.fotoTag} onChange={(e) => set("fotoTag", e.target.value)} placeholder="https://photos.app.goo.gl/…" />
+      <p className="muted" style={{ marginTop: 4, marginBottom: 4 }}>
+        Fotos lädst du und die Gäste weiterhin direkt auf der Seite hoch. Verwaltung, Löschen und
+        ZIP-Download findest du im Tab „Fotos". Wenn nach dem Fest ein fertiges Album steht (z. B.
+        Google Fotos oder OneDrive), trag den Link hier ein — er erscheint dann automatisch auf der
+        Seite.
+      </p>
+      <Field label="Link zu den Fotos vom Fest" hint="z. B. Google-Fotos- oder OneDrive-Album, erscheint erst wenn ausgefüllt">
+        <input
+          className="inp"
+          value={draft.fotoAlbumLink}
+          onChange={(e) => set("fotoAlbumLink", e.target.value)}
+          placeholder="https://photos.app.goo.gl/… oder https://1drv.ms/…"
+        />
       </Field>
       <Field label="ARCOTEL — Buchungslink" hint="vorausgefüllt: E-Mail ans Reservierungsteam">
         <input className="inp" value={draft.arcotelLink} onChange={(e) => set("arcotelLink", e.target.value)} placeholder="mailto:… oder https://…" />
@@ -1328,6 +1743,16 @@ const CSS = `
 .btn.big{width:100%;padding:16px;font-size:17px;margin-top:8px}
 .btn:disabled{opacity:.5;cursor:default;transform:none}
 .linkcard .btn{margin-top:6px}
+.upload-ask{display:flex;gap:8px}
+.upload-ask .inp{flex:1;min-width:0}
+.upload-ask .btn{margin-top:0;flex-shrink:0}
+.upload-result{margin-top:10px}
+.upload-ok{color:var(--accent-deep);font-weight:600}
+.upload-warn{color:#c0392b;font-weight:600;margin-bottom:6px}
+.upload-skip{color:var(--muted);margin-top:6px}
+.upload-fail-list{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
+.upload-fail-list li{padding:2px 0}
+.upload-fail-list strong{color:var(--ink)}
 
 /* FORM */
 .form{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px}
@@ -1350,8 +1775,24 @@ textarea.inp{resize:vertical}
 .stepper-sm span{min-width:38px;font-size:16px}
 .sportcounts{display:flex;flex-direction:column;gap:8px}
 .sportcount-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1.5px solid var(--line-2);background:var(--bg-soft);border-radius:11px;padding:8px 8px 8px 15px}
-.sportcount-label{font-size:15px;font-weight:500}
-.sportcount-row .stepper{background:var(--surface)}
+.sportcount-label{font-size:15px;font-weight:500;word-break:break-word;overflow-wrap:anywhere;hyphens:auto;min-width:0;flex:1}
+.sportcount-row .stepper{background:var(--surface);flex-shrink:0}
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.gallery-item{display:block;aspect-ratio:1/1;border-radius:10px;overflow:hidden;border:1.5px solid var(--line-2)}
+.gallery-item img{width:100%;height:100%;object-fit:cover;display:block}
+.admin-photos{margin-top:6px}
+.admin-photo-item{position:relative}
+.admin-photo-item .photo-del{position:absolute;top:6px;right:6px;width:28px;height:28px;min-width:0;border:none;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.admin-photo-item .photo-del:hover{background:rgba(15,20,23,.85)}
+.admin-photo-item .photo-del:disabled{opacity:.5;cursor:default}
+.admin-photo-item .photo-select{position:absolute;top:6px;left:6px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:rgba(15,20,23,.55);border-radius:7px;cursor:pointer}
+.admin-photo-item .photo-select input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.admin-photo-item.is-selected .gallery-item{outline:2.5px solid var(--accent);outline-offset:-2.5px}
+.admin-photo-item .photo-uploader{margin-top:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.select-bar{align-items:center}
+.btn-danger{color:#c0392b;border-color:#c0392b}
+.btn-danger:hover{background:#c0392b;color:#fff}
+.btn-danger:disabled{color:var(--muted);border-color:var(--line-2)}
 .opts{display:flex;flex-direction:column;gap:9px}
 .opt{display:flex;align-items:center;gap:11px;border:1.5px solid var(--line-2);background:var(--bg-soft);border-radius:11px;padding:13px 15px;cursor:pointer;font-size:15px;transition:all .15s ease}
 .opt.on{border-color:var(--accent);background:var(--tint)}
@@ -1451,6 +1892,11 @@ textarea.inp{resize:vertical}
   .tbl td{border:none;padding:5px 12px;display:flex;justify-content:space-between;gap:14px}
   .tbl td::before{content:attr(data-l);font-weight:600;color:var(--muted)}
   .tbl td[data-l=""]::before{content:""}
+  .sportcount-row{gap:8px;padding:8px 6px 8px 12px}
+  .sportcount-label{font-size:14px}
+  .stepper-sm button{width:34px;height:34px;font-size:18px}
+  .stepper-sm span{min-width:30px;font-size:15px}
+  .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}
 }
 @media (prefers-reduced-motion:reduce){
   .line-wave{animation:none!important}

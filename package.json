@@ -8,9 +8,14 @@
     "start": "next start"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "@vercel/blob": "^2.6.1",
+    "archiver": "^7.0.1",
     "next": "latest",
     "react": "^18",
-    "react-dom": "^18",
-    "@neondatabase/serverless": "^0.10.4"
+    "react-dom": "^18"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
   }
 }
