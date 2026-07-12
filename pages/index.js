@@ -86,7 +86,6 @@ const DEFAULT_SETTINGS = {
     "&body=" + encodeURIComponent(MAIL_BODY_CITY),
   cityEz: "110",
   cityDz: "130",
-  fotoAlbumLink: "",
   giftText:
     "Das größte Geschenk seid ihr — eure Anwesenheit und gemeinsame Erlebnisse. Wer trotzdem etwas mitbringen möchte: ein Gutschein für eine gemeinsame Aktion (Wandern, Brunch, Konzert, ein Bier nach Feierabend).",
 };
@@ -428,16 +427,6 @@ function InfoPage({ settings, onAdmin, loaded }) {
               setUploaderName={setUploaderName}
             />
           </div>
-          {settings.fotoAlbumLink && settings.fotoAlbumLink.trim() && (
-            <div className="cards" style={{ marginTop: 14 }}>
-              <LinkCard
-                title="Fotos vom Fest"
-                desc="Alle Erinnerungsfotos vom Tag — zum Ansehen und Herunterladen."
-                url={settings.fotoAlbumLink}
-                cta="Fotos ansehen"
-              />
-            </div>
-          )}
         </Section>
 
         <Section eyebrow="Bist du dabei?" title="Jetzt anmelden">
@@ -1661,20 +1650,6 @@ function SettingsPanel({ settings, setSettings }) {
 
       <Field label="Spotify-Playlist (Link)">
         <input className="inp" value={draft.spotify} onChange={(e) => set("spotify", e.target.value)} placeholder="https://open.spotify.com/…" />
-      </Field>
-      <p className="muted" style={{ marginTop: 4, marginBottom: 4 }}>
-        Fotos lädst du und die Gäste weiterhin direkt auf der Seite hoch. Verwaltung, Löschen und
-        ZIP-Download findest du im Tab „Fotos". Wenn nach dem Fest ein fertiges Album steht (z. B.
-        Google Fotos oder OneDrive), trag den Link hier ein — er erscheint dann automatisch auf der
-        Seite.
-      </p>
-      <Field label="Link zu den Fotos vom Fest" hint="z. B. Google-Fotos- oder OneDrive-Album, erscheint erst wenn ausgefüllt">
-        <input
-          className="inp"
-          value={draft.fotoAlbumLink}
-          onChange={(e) => set("fotoAlbumLink", e.target.value)}
-          placeholder="https://photos.app.goo.gl/… oder https://1drv.ms/…"
-        />
       </Field>
       <Field label="ARCOTEL — Buchungslink" hint="vorausgefüllt: E-Mail ans Reservierungsteam">
         <input className="inp" value={draft.arcotelLink} onChange={(e) => set("arcotelLink", e.target.value)} placeholder="mailto:… oder https://…" />
