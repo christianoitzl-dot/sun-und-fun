@@ -136,6 +136,23 @@ async function apiGetPhotos(category) {
   }
 }
 
+async function apiGetPhotoStorage() {
+  try {
+    const r = await fetch("/api/photos-storage");
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1000) return `${mb.toLocaleString("de-AT", { maximumFractionDigits: 1 })} MB`;
+  return `${(mb / 1024).toLocaleString("de-AT", { maximumFractionDigits: 2 })} GB`;
+}
+
 // Wirft bei Fehlschlag (statt ihn zu verschlucken), damit ein Fehlschlag beim
 // Speichern der Metadaten nicht als "erfolgreicher" Upload durchgeht — sonst
 // landet die Datei im Blob-Speicher, ohne dass es einen DB-Eintrag dafür gibt.
@@ -693,6 +710,8 @@ function AdminPhotos() {
   const [selected, setSelected] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [nameSearch, setNameSearch] = useState("");
+  const [storage, setStorage] = useState(null);
+  const [storageLoading, setStorageLoading] = useState(true);
 
   async function load() {
     setLoading(true);
@@ -702,8 +721,22 @@ function AdminPhotos() {
     setLoading(false);
   }
 
+  // Fragt die tatsächlich belegte Speichergröße direkt bei Vercel Blob ab
+  // (nicht aus der DB), damit man rechtzeitig sieht, wann ein Upgrade nötig wird.
+  async function loadStorage() {
+    setStorageLoading(true);
+    setStorage(await apiGetPhotoStorage());
+    setStorageLoading(false);
+  }
+
+  function refresh() {
+    load();
+    loadStorage();
+  }
+
   useEffect(() => {
     load();
+    loadStorage();
   }, []);
 
   const shown = useMemo(() => {
@@ -776,6 +809,22 @@ function AdminPhotos() {
 
   return (
     <div className="admin-photos">
+      <div className="storage-info">
+        {storageLoading ? (
+          <span className="muted">Speichergröße wird ermittelt …</span>
+        ) : storage ? (
+          <span>
+            Speicherbelegung: <strong>{formatBytes(storage.totalBytes)}</strong> in {storage.count} Datei
+            {storage.count === 1 ? "" : "en"}
+            <a href="https://vercel.com/dashboard/stores" target="_blank" rel="noreferrer" className="storage-link">
+              Limit im Vercel-Dashboard prüfen
+            </a>
+          </span>
+        ) : (
+          <span className="muted">Speichergröße konnte nicht ermittelt werden.</span>
+        )}
+      </div>
+
       <div className="admin-filters">
         <input
           className="inp"
@@ -789,7 +838,7 @@ function AdminPhotos() {
         <button className="btn btn-accent" onClick={downloadZip} disabled={loading || shown.length === 0}>
           Alle als ZIP ({shown.length})
         </button>
-        <button className="btn btn-ghost" onClick={load}>
+        <button className="btn btn-ghost" onClick={refresh}>
           Aktualisieren
         </button>
       </div>
@@ -1857,6 +1906,9 @@ textarea.inp{resize:vertical}
 .mini-tbl-sum td:not(:first-child){color:var(--accent)}
 .mini-tbl-sub td{font-style:italic;color:var(--muted)}
 .admin-actions{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.storage-info{background:var(--bg-soft);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:14px}
+.storage-link{margin-left:10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:13px}
+.storage-link:hover{text-decoration:underline}
 .admin-filters{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center}
 .admin-filters .inp{width:auto;flex:1 1 150px;min-width:140px;padding:11px 13px}
 .admin-filters .sortdir{white-space:nowrap;flex:0 0 auto}
