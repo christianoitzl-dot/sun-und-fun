@@ -36,6 +36,20 @@ const ARRIVAL = [
   { id: "abends", label: "Ab 20:00 — Party" },
 ];
 
+// Anmeldezeitpunkt kompakt als Datum + Uhrzeit (für die Admin-Tabelle)
+function formatRegDate(ts) {
+  if (!ts) return "–";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "–";
+  return d.toLocaleString("de-AT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 const DEFAULT_SETTINGS = {
   spotify: "",
   giftText:
@@ -852,13 +866,25 @@ function AdminPhotos({ adminPw }) {
       ) : shown.length === 0 ? (
         <div className="empty">Keine Treffer für diese Namenssuche.</div>
       ) : (
+        <>
+        <p className="muted photo-hint">Foto antippen zum Auswählen · ⤢ öffnet es groß in neuem Tab.</p>
         <div className="gallery-grid">
           {shown.map((p) => (
             <div key={p.id} className={"admin-photo-item " + (selected.has(p.id) ? "is-selected" : "")}>
-              <label className="photo-select">
-                <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
-              </label>
-              <a href={p.url} target="_blank" rel="noreferrer" className="gallery-item">
+              <div
+                className="gallery-item photo-toggle"
+                role="button"
+                tabIndex={0}
+                aria-pressed={selected.has(p.id)}
+                title={selected.has(p.id) ? "Auswahl aufheben" : "Zum Auswählen tippen"}
+                onClick={() => toggleSelect(p.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleSelect(p.id);
+                  }
+                }}
+              >
                 <Image
                   src={p.url}
                   alt={p.filename || "Foto"}
@@ -867,7 +893,20 @@ function AdminPhotos({ adminPw }) {
                   style={{ objectFit: "cover" }}
                   loading="lazy"
                 />
-              </a>
+                <span className="photo-check" aria-hidden="true">
+                  {selected.has(p.id) ? "✓" : ""}
+                </span>
+                <a
+                  href={p.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="photo-open"
+                  title="Foto groß öffnen"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ⤢
+                </a>
+              </div>
               <button
                 type="button"
                 className="photo-del"
@@ -883,6 +922,7 @@ function AdminPhotos({ adminPw }) {
             </div>
           ))}
         </div>
+        </>
       )}
     </div>
   );
@@ -1458,6 +1498,7 @@ function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
                     <th>Ankunft</th>
                     <th>Sport</th>
                     <th>Nachricht</th>
+                    <th>Angemeldet</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1481,6 +1522,7 @@ function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
                       <td data-l="Ankunft">{ARRIVAL.find((a) => a.id === r.arrival)?.label.split(" — ")[0] || "–"}</td>
                       <td data-l="Sport">{sportSummary(r)}</td>
                       <td data-l="Nachricht">{r.message ? r.message : "–"}</td>
+                      <td data-l="Angemeldet" className="reg-date">{formatRegDate(r.ts)}</td>
                       <td data-l="">
                         <button className="del" onClick={() => removeReg(r.id)} title="Löschen">
                           ✕
@@ -1717,9 +1759,13 @@ textarea.inp{resize:vertical}
 .admin-photo-item .photo-del{position:absolute;top:6px;right:6px;width:28px;height:28px;min-width:0;border:none;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .admin-photo-item .photo-del:hover{background:rgba(15,20,23,.85)}
 .admin-photo-item .photo-del:disabled{opacity:.5;cursor:default}
-.admin-photo-item .photo-select{position:absolute;top:6px;left:6px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:rgba(15,20,23,.55);border-radius:7px;cursor:pointer}
-.admin-photo-item .photo-select input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.photo-toggle{cursor:pointer;user-select:none}
+.admin-photo-item .photo-check{position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,20,23,.4);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.45);z-index:2}
+.admin-photo-item.is-selected .photo-check{background:var(--accent)}
+.admin-photo-item .photo-open{position:absolute;bottom:6px;right:6px;width:28px;height:28px;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:15px;line-height:1;text-decoration:none;display:flex;align-items:center;justify-content:center;z-index:2}
+.admin-photo-item .photo-open:hover{background:rgba(15,20,23,.85)}
 .admin-photo-item.is-selected .gallery-item{outline:2.5px solid var(--accent);outline-offset:-2.5px}
+.photo-hint{font-size:13px;margin:0 0 10px}
 .admin-photo-item .photo-uploader{margin-top:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .select-bar{align-items:center}
 .btn-danger{color:#c0392b;border-color:#c0392b}
@@ -1799,6 +1845,7 @@ textarea.inp{resize:vertical}
 .tbl th{text-align:left;padding:14px 12px;background:var(--bg-soft);font-weight:600;white-space:nowrap}
 .tbl td{padding:14px 12px;border-top:1px solid var(--line);vertical-align:top}
 .row-no{opacity:.55}
+.reg-date{white-space:nowrap;color:var(--muted);font-size:13px}
 .msg{color:var(--muted);font-size:13px;margin-top:4px;font-style:italic}
 .tag{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
 .tag-yes{background:var(--tint);color:var(--accent-deep)}
