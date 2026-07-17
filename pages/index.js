@@ -867,23 +867,16 @@ function AdminPhotos({ adminPw }) {
         <div className="empty">Keine Treffer für diese Namenssuche.</div>
       ) : (
         <>
-        <p className="muted photo-hint">Foto antippen zum Auswählen · ⤢ öffnet es groß in neuem Tab.</p>
+        <p className="muted photo-hint">Kreis oben links anklicken zum Auswählen · Klick aufs Foto öffnet es groß.</p>
         <div className="gallery-grid">
           {shown.map((p) => (
             <div key={p.id} className={"admin-photo-item " + (selected.has(p.id) ? "is-selected" : "")}>
-              <div
-                className="gallery-item photo-toggle"
-                role="button"
-                tabIndex={0}
-                aria-pressed={selected.has(p.id)}
-                title={selected.has(p.id) ? "Auswahl aufheben" : "Zum Auswählen tippen"}
-                onClick={() => toggleSelect(p.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleSelect(p.id);
-                  }
-                }}
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="gallery-item"
+                title="Foto groß öffnen"
               >
                 <Image
                   src={p.url}
@@ -893,20 +886,16 @@ function AdminPhotos({ adminPw }) {
                   style={{ objectFit: "cover" }}
                   loading="lazy"
                 />
-                <span className="photo-check" aria-hidden="true">
-                  {selected.has(p.id) ? "✓" : ""}
-                </span>
-                <a
-                  href={p.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="photo-open"
-                  title="Foto groß öffnen"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  ⤢
-                </a>
-              </div>
+              </a>
+              <button
+                type="button"
+                className="photo-check"
+                aria-pressed={selected.has(p.id)}
+                title={selected.has(p.id) ? "Auswahl aufheben" : "Zum Auswählen anklicken"}
+                onClick={() => toggleSelect(p.id)}
+              >
+                {selected.has(p.id) ? "✓" : ""}
+              </button>
               <button
                 type="button"
                 className="photo-del"
@@ -1759,11 +1748,9 @@ textarea.inp{resize:vertical}
 .admin-photo-item .photo-del{position:absolute;top:6px;right:6px;width:28px;height:28px;min-width:0;border:none;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .admin-photo-item .photo-del:hover{background:rgba(15,20,23,.85)}
 .admin-photo-item .photo-del:disabled{opacity:.5;cursor:default}
-.photo-toggle{cursor:pointer;user-select:none}
-.admin-photo-item .photo-check{position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,20,23,.4);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.45);z-index:2}
-.admin-photo-item.is-selected .photo-check{background:var(--accent)}
-.admin-photo-item .photo-open{position:absolute;bottom:6px;right:6px;width:28px;height:28px;border-radius:50%;background:rgba(15,20,23,.65);color:#fff;font-size:15px;line-height:1;text-decoration:none;display:flex;align-items:center;justify-content:center;z-index:2}
-.admin-photo-item .photo-open:hover{background:rgba(15,20,23,.85)}
+.admin-photo-item .photo-check{position:absolute;top:6px;left:6px;width:26px;height:26px;padding:0;border-radius:50%;border:2px solid #fff;background:rgba(15,20,23,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.45);cursor:pointer;z-index:2}
+.admin-photo-item .photo-check:hover{background:rgba(15,20,23,.7)}
+.admin-photo-item.is-selected .photo-check{background:var(--accent);border-color:#fff}
 .admin-photo-item.is-selected .gallery-item{outline:2.5px solid var(--accent);outline-offset:-2.5px}
 .photo-hint{font-size:13px;margin:0 0 10px}
 .admin-photo-item .photo-uploader{margin-top:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
