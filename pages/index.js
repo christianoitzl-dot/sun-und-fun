@@ -377,7 +377,7 @@ function InfoPage({ settings, onAdmin, loaded }) {
           </div>
         </Section>
 
-        <Section eyebrow="Statt Geschenk" title="Zeit & gemeinsame Erlebnisse">
+        <Section eyebrow="Geschenk" title="Zeit & gemeinsame Erlebnisse">
           <div className="gift">
             <p>{settings.giftText}</p>
           </div>
@@ -1487,7 +1487,7 @@ function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
                     <th>Ankunft</th>
                     <th>Sport</th>
                     <th>Nachricht</th>
-                    <th>Angemeldet</th>
+                    <th>Angemeldet/Abgesagt</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1511,7 +1511,7 @@ function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
                       <td data-l="Ankunft">{ARRIVAL.find((a) => a.id === r.arrival)?.label.split(" — ")[0] || "–"}</td>
                       <td data-l="Sport">{sportSummary(r)}</td>
                       <td data-l="Nachricht">{r.message ? r.message : "–"}</td>
-                      <td data-l="Angemeldet" className="reg-date">{formatRegDate(r.ts)}</td>
+                      <td data-l={r.attending === "no" ? "Abgesagt" : "Angemeldet"} className="reg-date">{formatRegDate(r.ts)}</td>
                       <td data-l="">
                         <button className="del" onClick={() => removeReg(r.id)} title="Löschen">
                           ✕
@@ -1574,7 +1574,7 @@ function SettingsPanel({ settings, setSettings, adminPw }) {
       <Field label="Spotify-Playlist (Link)">
         <input className="inp" value={draft.spotify} onChange={(e) => set("spotify", e.target.value)} placeholder="https://open.spotify.com/…" />
       </Field>
-      <Field label="Text „Statt Geschenk“">
+      <Field label="Text „Geschenk“">
         <textarea className="inp" rows={4} value={draft.giftText} onChange={(e) => set("giftText", e.target.value)} />
       </Field>
 
