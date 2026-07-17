@@ -11,8 +11,6 @@ import { upload } from "@vercel/blob/client";
   Admin-Passwort: 3246
 */
 
-const ADMIN_PW = "3246";
-
 const SPORTS = [
   { id: "tennis", label: "Tennis" },
   { id: "beach", label: "Beachvolleyball" },
@@ -38,54 +36,8 @@ const ARRIVAL = [
   { id: "abends", label: "Ab 20:00 — Party" },
 ];
 
-// Übernachtung einer Anmeldung als Text (für Tabelle/Export)
-function staySummary(r) {
-  if (r.attending !== "yes") return "–";
-  return r.stay === "yes" ? "Ja" : "Nein";
-}
-
-const MAIL_BODY_ARCOTEL = [
-  "Sehr geehrtes Reservierungsteam,",
-  "",
-  "ich möchte mit Bezug auf UNICREDITGROUP folgendes Zimmer reservieren:",
-  "",
-  "Zimmer: [Einzelzimmer / Doppelzimmer / Suite]",
-  "Anreise: 29.08.2026",
-  "Abreise: 30.08.2026",
-  "Name: [Vor- und Nachname]",
-  "Telefon: [Telefonnummer]",
-  "",
-  "Mit freundlichen Grüßen",
-  "[Vor- und Nachname]",
-].join("\r\n");
-
-const MAIL_BODY_CITY = [
-  "Sehr geehrtes Hotel-Team,",
-  "",
-  "ich möchte folgendes Zimmer reservieren:",
-  "",
-  "Zimmer: [Einzelzimmer / Doppelzimmer]",
-  "Anreise: 29.08.2026",
-  "Abreise: 30.08.2026",
-  "Name: [Vor- und Nachname]",
-  "Telefon: [Telefonnummer]",
-  "",
-  "Mit freundlichen Grüßen",
-  "[Vor- und Nachname]",
-].join("\r\n");
-
 const DEFAULT_SETTINGS = {
   spotify: "",
-  arcotelLink:
-    "mailto:reservation.kaiserwasser@arcotel.com" +
-    "?subject=" + encodeURIComponent("Zimmerreservierung Sun & Fun 29.–30.08.2026 (UNICREDITGROUP)") +
-    "&body=" + encodeURIComponent(MAIL_BODY_ARCOTEL),
-  moedlingReserveLink:
-    "mailto:office@city-hotel.cc" +
-    "?subject=" + encodeURIComponent("Zimmerreservierung 29.–30.08.2026") +
-    "&body=" + encodeURIComponent(MAIL_BODY_CITY),
-  cityEz: "110",
-  cityDz: "130",
   giftText:
     "Das größte Geschenk seid ihr — eure Anwesenheit und gemeinsame Erlebnisse. Wer trotzdem etwas mitbringen möchte: ein Gutschein für eine gemeinsame Aktion (Wandern, Brunch, Konzert, ein Bier nach Feierabend).",
 };
@@ -101,12 +53,26 @@ async function apiGetSettings() {
   }
 }
 
-async function apiSaveSettings(value) {
+async function apiSaveSettings(value, adminPw) {
   try {
     const r = await fetch("/api/settings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-admin-key": adminPw },
       body: JSON.stringify(value),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Prüft das Admin-Passwort server-seitig (das Passwort selbst steht nicht
+// mehr im Client-Code, sondern nur am Server bzw. in der Env-Variable ADMIN_PW).
+async function apiAdminCheck(pw) {
+  try {
+    const r = await fetch("/api/admin-check", {
+      method: "POST",
+      headers: { "x-admin-key": pw },
     });
     return r.ok;
   } catch {
@@ -172,10 +138,11 @@ async function apiSavePhoto({ url, category, filename, uploader }) {
   }
 }
 
-async function apiDeletePhoto(id) {
+async function apiDeletePhoto(id, adminPw) {
   try {
     const r = await fetch("/api/photos?id=" + encodeURIComponent(id), {
       method: "DELETE",
+      headers: { "x-admin-key": adminPw },
     });
     return r.ok;
   } catch {
@@ -183,10 +150,11 @@ async function apiDeletePhoto(id) {
   }
 }
 
-async function apiDeletePhotos(ids) {
+async function apiDeletePhotos(ids, adminPw) {
   try {
     const r = await fetch("/api/photos?ids=" + encodeURIComponent(ids.join(",")), {
       method: "DELETE",
+      headers: { "x-admin-key": adminPw },
     });
     return r.ok;
   } catch {
@@ -221,10 +189,11 @@ async function apiSaveRegistration(record) {
   }
 }
 
-async function apiDeleteRegistration(id) {
+async function apiDeleteRegistration(id, adminPw) {
   try {
     const r = await fetch("/api/registrations?id=" + encodeURIComponent(id), {
       method: "DELETE",
+      headers: { "x-admin-key": adminPw },
     });
     return r.ok;
   } catch {
@@ -255,14 +224,6 @@ export default function App() {
     (async () => {
       const s = await apiGetSettings();
       const merged = { ...DEFAULT_SETTINGS, ...(s || {}) };
-      // Einmalige Migration: die zwei Hotel-Mail-Links auf die neuen v15-Vorlagen setzen,
-      // ohne andere bereits gespeicherte Werte (z.B. Spotify-Link) zu verlieren.
-      if (!merged.hotelLinksV15) {
-        merged.arcotelLink = DEFAULT_SETTINGS.arcotelLink;
-        merged.moedlingReserveLink = DEFAULT_SETTINGS.moedlingReserveLink;
-        merged.hotelLinksV15 = true;
-        await apiSaveSettings(merged);
-      }
       setSettings(merged);
       setLoaded(true);
     })();
@@ -430,7 +391,7 @@ function InfoPage({ settings, onAdmin, loaded }) {
         </Section>
 
         <Section eyebrow="Bist du dabei?" title="Jetzt anmelden">
-          <RegistrationForm loaded={loaded} settings={settings} onSubmitted={reloadCounts} />
+          <RegistrationForm loaded={loaded} onSubmitted={reloadCounts} />
         </Section>
       </main>
 
@@ -722,7 +683,7 @@ function PhotoUploadCard({ category, title, desc, cta, uploaderName, setUploader
 // =====================================================
 //  ADMIN — FOTOS
 // =====================================================
-function AdminPhotos() {
+function AdminPhotos({ adminPw }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -767,7 +728,7 @@ function AdminPhotos() {
   async function removePhoto(id) {
     if (!window.confirm("Dieses Foto wirklich löschen? Das kann nicht rückgängig gemacht werden.")) return;
     setBusyId(id);
-    const ok = await apiDeletePhoto(id);
+    const ok = await apiDeletePhoto(id, adminPw);
     if (ok) {
       setPhotos((p) => p.filter((x) => x.id !== id));
       setSelected((s) => {
@@ -816,7 +777,7 @@ function AdminPhotos() {
     if (ids.length === 0) return;
     if (!window.confirm(`${ids.length} Foto${ids.length === 1 ? "" : "s"} wirklich löschen? Das kann nicht rückgängig gemacht werden.`)) return;
     setBulkBusy(true);
-    const ok = await apiDeletePhotos(ids);
+    const ok = await apiDeletePhotos(ids, adminPw);
     if (ok) {
       setPhotos((p) => p.filter((x) => !selected.has(x.id)));
       setSelected(new Set());
@@ -927,55 +888,6 @@ function AdminPhotos() {
   );
 }
 
-function BookLink({ url, label }) {
-  if (!url || !url.trim()) return null;
-  const isMail = url.trim().toLowerCase().startsWith("mailto:");
-  const extra = isMail ? {} : { target: "_blank", rel: "noreferrer" };
-  return (
-    <a className="btn btn-accent hotel-book" href={url} {...extra}>
-      {label}
-    </a>
-  );
-}
-
-function HotelOptions({ settings }) {
-  return (
-    <div className="hotels">
-      <p className="lead">Zwei Empfehlungen zum Übernachten:</p>
-      <div className="cards">
-        <div className="card hotel">
-          <h4>ARCOTEL Kaiserwasser</h4>
-          <p className="hotel-sub">Direkt neben der Anlage</p>
-          <ul className="prices">
-            <li><span>Einzelzimmer</span><span>€ 120,– / Nacht</span></li>
-            <li><span>Doppelzimmer</span><span>€ 140,– / Nacht</span></li>
-            <li><span>Suite</span><span>€ 178,– / Nacht</span></li>
-          </ul>
-          <p className="note">
-            Preise pro Zimmer, inkl. Frühstück (Suite für 2 Erw. + 2 Kinder).
-            Buchung selbst mit Stichwort <strong>UNICREDITGROUP</strong> —
-            spätestens 21 Tage vor Anreise.
-          </p>
-          <BookLink url={settings.arcotelLink} label="Zimmer reservieren" />
-        </div>
-        <div className="card hotel">
-          <h4>City Hotel Mödling</h4>
-          <p className="hotel-sub">Alternative Möglichkeit</p>
-          <ul className="prices">
-            <li><span>Einzelzimmer</span><span>€ {settings.cityEz || "100"},– / Nacht</span></li>
-            <li><span>Doppelzimmer</span><span>€ {settings.cityDz || "120"},– / Nacht</span></li>
-          </ul>
-          <p className="note">
-            Preise pro Zimmer, Brunch bei uns zu Hause, wenn wir
-            ausgeschlafen sind.
-          </p>
-          <BookLink url={settings.moedlingReserveLink} label="Zimmer reservieren" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // =====================================================
 //  REGISTRATION FORM
 // =====================================================
@@ -987,11 +899,10 @@ const EMPTY_FORM = {
   kids: 0,
   arrival: "",
   sportCounts: { tennis: 0, beach: 0, sup: 0, tretboot: 0, fussball: 0 },
-  stay: "",
   message: "",
 };
 
-function RegistrationForm({ loaded, settings, onSubmitted }) {
+function RegistrationForm({ loaded, onSubmitted }) {
   const [f, setF] = useState(EMPTY_FORM);
   const [status, setStatus] = useState("idle");
   const [errors, setErrors] = useState({});
@@ -1020,7 +931,6 @@ function RegistrationForm({ loaded, settings, onSubmitted }) {
       } else if (hatSport && f.arrival !== "ab13") {
         e.arrival = "Für Sport bitte \"Ab 13:00 — Sun & Fun\" als Ankunftszeit wählen.";
       }
-      if (!f.stay) e.stay = "Bitte wähle aus.";
     }
     setErrors(e);
     if (Object.keys(e).length > 0) {
@@ -1047,7 +957,6 @@ function RegistrationForm({ loaded, settings, onSubmitted }) {
       kids: f.attending === "yes" ? Number(f.kids) || 0 : 0,
       arrival: f.attending === "yes" ? f.arrival : "",
       sportCounts: f.attending === "yes" ? f.sportCounts : {},
-      stay: f.attending === "yes" ? f.stay : "",
       message: f.message.trim(),
     };
     const ok = await apiSaveRegistration(record);
@@ -1065,13 +974,6 @@ function RegistrationForm({ loaded, settings, onSubmitted }) {
             ? "Deine Anmeldung ist eingegangen. Ich freue mich auf dich!"
             : "Deine Rückmeldung ist gespeichert."}
         </p>
-
-        {f.attending === "yes" && f.stay === "yes" && (
-          <div className="thanks-hotels">
-            <h4 className="thanks-hotels-title">Übernachtung</h4>
-            <HotelOptions settings={settings} />
-          </div>
-        )}
 
         <p className="thanks-fix">
           Etwas falsch angegeben? Melde dich einfach neu an — ich lösche die
@@ -1187,25 +1089,6 @@ function RegistrationForm({ loaded, settings, onSubmitted }) {
                   und genießen.
                 </p>
               </Field>
-
-              <Field label="Brauchst du eine Übernachtungsmöglichkeit?" error={errors.stay} required>
-                <div className="seg">
-                  <button
-                    type="button"
-                    className={"seg-btn " + (f.stay === "yes" ? "on" : "")}
-                    onClick={() => set("stay", "yes")}
-                  >
-                    Ja
-                  </button>
-                  <button
-                    type="button"
-                    className={"seg-btn " + (f.stay === "no" ? "on" : "")}
-                    onClick={() => set("stay", "no")}
-                  >
-                    Nein
-                  </button>
-                </div>
-              </Field>
             </>
           )}
 
@@ -1256,6 +1139,18 @@ function AdminPage({ settings, setSettings, onBack }) {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  // Passwort wird server-seitig geprüft (/api/admin-check) — es steht nicht
+  // mehr im ausgelieferten JavaScript.
+  async function tryOpen() {
+    if (checking || !pw) return;
+    setChecking(true);
+    const ok = await apiAdminCheck(pw);
+    setChecking(false);
+    if (ok) setAuthed(true);
+    else setPwErr(true);
+  }
 
   if (!authed) {
     return (
@@ -1272,10 +1167,7 @@ function AdminPage({ settings, setSettings, onBack }) {
               setPwErr(false);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (pw === ADMIN_PW) setAuthed(true);
-                else setPwErr(true);
-              }
+              if (e.key === "Enter") tryOpen();
             }}
             placeholder="Passwort"
           />
@@ -1284,8 +1176,8 @@ function AdminPage({ settings, setSettings, onBack }) {
             <button className="btn btn-ghost" onClick={onBack}>
               Zurück
             </button>
-            <button className="btn btn-primary" onClick={() => (pw === ADMIN_PW ? setAuthed(true) : setPwErr(true))}>
-              Öffnen
+            <button className="btn btn-primary" onClick={tryOpen} disabled={checking}>
+              {checking ? "Prüft…" : "Öffnen"}
             </button>
           </div>
         </div>
@@ -1293,10 +1185,10 @@ function AdminPage({ settings, setSettings, onBack }) {
     );
   }
 
-  return <AdminDashboard settings={settings} setSettings={setSettings} onBack={onBack} />;
+  return <AdminDashboard settings={settings} setSettings={setSettings} onBack={onBack} adminPw={pw} />;
 }
 
-function AdminDashboard({ settings, setSettings, onBack }) {
+function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("anmeldungen");
@@ -1318,8 +1210,8 @@ function AdminDashboard({ settings, setSettings, onBack }) {
 
   async function removeReg(id) {
     if (!window.confirm("Diese Anmeldung wirklich löschen?")) return;
-    await apiDeleteRegistration(id);
-    setRegs((p) => p.filter((r) => r.id !== id));
+    const ok = await apiDeleteRegistration(id, adminPw);
+    if (ok) setRegs((p) => p.filter((r) => r.id !== id));
   }
 
   const yes = regs.filter((r) => r.attending === "yes");
@@ -1343,7 +1235,6 @@ function AdminDashboard({ settings, setSettings, onBack }) {
         case "vorname": return (r.vorname || "").toLowerCase();
         case "status": return r.attending || "";
         case "arrival": return r.arrival || "";
-        case "stay": return r.stay || "";
         case "ts": return r.ts || "";
         default: return "";
       }
@@ -1400,7 +1291,7 @@ function AdminDashboard({ settings, setSettings, onBack }) {
   }, [regs]);
 
   function exportCSV() {
-    const head = ["Nachname", "Vorname", "Status", "Partner", "Kinder", "Ankunft", "Sport", "Übernachtung", "Nachricht", "Zeitpunkt"];
+    const head = ["Nachname", "Vorname", "Status", "Partner", "Kinder", "Ankunft", "Sport", "Nachricht", "Zeitpunkt"];
     const rows = shown.map((r) => [
       r.nachname || "",
       r.vorname || "",
@@ -1409,7 +1300,6 @@ function AdminDashboard({ settings, setSettings, onBack }) {
       r.kids || 0,
       ARRIVAL.find((a) => a.id === r.arrival)?.label || "",
       sportSummary(r),
-      staySummary(r),
       (r.message || "").replace(/\n/g, " "),
       new Date(r.ts).toLocaleString("de-AT"),
     ]);
@@ -1538,7 +1428,6 @@ function AdminDashboard({ settings, setSettings, onBack }) {
                 <option value="vorname">Sortieren: Vorname</option>
                 <option value="status">Sortieren: Status</option>
                 <option value="arrival">Sortieren: Ankunft</option>
-                <option value="stay">Sortieren: Übernachtung</option>
                 <option value="ts">Sortieren: Zeitpunkt</option>
               </select>
               <button
@@ -1568,7 +1457,6 @@ function AdminDashboard({ settings, setSettings, onBack }) {
                     <th>Begl.</th>
                     <th>Ankunft</th>
                     <th>Sport</th>
-                    <th>Übernachtung</th>
                     <th>Nachricht</th>
                     <th></th>
                   </tr>
@@ -1592,7 +1480,6 @@ function AdminDashboard({ settings, setSettings, onBack }) {
                       </td>
                       <td data-l="Ankunft">{ARRIVAL.find((a) => a.id === r.arrival)?.label.split(" — ")[0] || "–"}</td>
                       <td data-l="Sport">{sportSummary(r)}</td>
-                      <td data-l="Übernachtung">{staySummary(r)}</td>
                       <td data-l="Nachricht">{r.message ? r.message : "–"}</td>
                       <td data-l="">
                         <button className="del" onClick={() => removeReg(r.id)} title="Löschen">
@@ -1608,9 +1495,9 @@ function AdminDashboard({ settings, setSettings, onBack }) {
         </>
       )}
 
-      {tab === "fotos" && <AdminPhotos />}
+      {tab === "fotos" && <AdminPhotos adminPw={adminPw} />}
 
-      {tab === "einstellungen" && <SettingsPanel settings={settings} setSettings={setSettings} />}
+      {tab === "einstellungen" && <SettingsPanel settings={settings} setSettings={setSettings} adminPw={adminPw} />}
     </div>
   );
 }
@@ -1625,7 +1512,7 @@ function Stat({ label, value, sub, big }) {
   );
 }
 
-function SettingsPanel({ settings, setSettings }) {
+function SettingsPanel({ settings, setSettings, adminPw }) {
   const [draft, setDraft] = useState(settings);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(settings), [settings]);
@@ -1636,9 +1523,14 @@ function SettingsPanel({ settings, setSettings }) {
   };
 
   async function save() {
-    await apiSaveSettings(draft);
-    setSettings(draft);
-    setSaved(true);
+    // Nur die tatsächlich verwendeten Felder speichern — Altlasten aus
+    // früheren Versionen werden dadurch nicht wieder mitgeschrieben.
+    const clean = { spotify: draft.spotify || "", giftText: draft.giftText || "" };
+    const ok = await apiSaveSettings(clean, adminPw);
+    if (ok) {
+      setSettings({ ...settings, ...clean });
+      setSaved(true);
+    }
   }
 
   return (
@@ -1651,20 +1543,6 @@ function SettingsPanel({ settings, setSettings }) {
       <Field label="Spotify-Playlist (Link)">
         <input className="inp" value={draft.spotify} onChange={(e) => set("spotify", e.target.value)} placeholder="https://open.spotify.com/…" />
       </Field>
-      <Field label="ARCOTEL — Buchungslink" hint="vorausgefüllt: E-Mail ans Reservierungsteam">
-        <input className="inp" value={draft.arcotelLink} onChange={(e) => set("arcotelLink", e.target.value)} placeholder="mailto:… oder https://…" />
-      </Field>
-      <Field label="City Hotel Mödling — Reservierungskontakt" hint="vorausgefüllt: E-Mail ans Hotel">
-        <input className="inp" value={draft.moedlingReserveLink} onChange={(e) => set("moedlingReserveLink", e.target.value)} placeholder="mailto:… oder https://…" />
-      </Field>
-      <div className="grid2">
-        <Field label="City Hotel — Einzelzimmer (€/Nacht)">
-          <input className="inp" value={draft.cityEz} onChange={(e) => set("cityEz", e.target.value)} placeholder="100" />
-        </Field>
-        <Field label="City Hotel — Doppelzimmer (€/Nacht)">
-          <input className="inp" value={draft.cityDz} onChange={(e) => set("cityDz", e.target.value)} placeholder="120" />
-        </Field>
-      </div>
       <Field label="Text „Statt Geschenk“">
         <textarea className="inp" rows={4} value={draft.giftText} onChange={(e) => set("giftText", e.target.value)} />
       </Field>
@@ -1782,12 +1660,6 @@ const CSS = `
 .card h4{font-family:var(--font-d);font-weight:700;font-size:19px;margin:0 0 8px}
 .card p{margin:0 0 8px;font-size:15px;line-height:1.5}
 .card .navi{color:var(--muted);font-size:14px}
-.hotel-sub{color:var(--accent)!important;font-weight:600;font-size:14px!important}
-.hotel-book{margin-top:12px}
-.prices{list-style:none;margin:10px 0;padding:0}
-.prices li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:15px}
-.prices li:last-child{border-bottom:none}
-.prices span:last-child{font-family:var(--font-d);font-weight:700}
 .gift{background:var(--bg-soft);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:14px;padding:24px}
 .gift p{margin:0;font-size:17px;line-height:1.6}
 
@@ -1866,9 +1738,6 @@ textarea.inp{resize:vertical}
 .thanks h3{font-family:var(--font-d);font-weight:800;font-size:26px;margin:0 0 8px}
 .thanks p{color:var(--muted);margin:0 0 20px;font-size:16px}
 .thanks-fix{color:var(--muted);font-size:14px;margin:0 0 18px}
-.thanks-hotels{text-align:left;margin:8px 0 26px;padding-top:24px;border-top:1px solid var(--line)}
-.thanks-hotels-title{font-family:var(--font-d);font-weight:700;font-size:20px;margin:0 0 4px;text-align:center}
-.hotels .lead{text-align:center}
 
 /* FOOTER */
 .footer{background:var(--bg-soft);border-top:1px solid var(--line);color:var(--muted);padding:28px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;font-size:14px}

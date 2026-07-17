@@ -1,5 +1,6 @@
 import { getDb } from "../../lib/db";
 import { del } from "@vercel/blob";
+import { checkAdmin } from "../../lib/adminAuth";
 
 // Legt die photos-Tabelle bei Bedarf an — unabhängig von ensureSchema() in
 // lib/db.js, damit diese Datei ohne Änderung an lib/db.js funktioniert.
@@ -51,6 +52,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "DELETE") {
+    if (!checkAdmin(req)) return res.status(401).json({ error: "Nicht berechtigt" });
     const { id, ids } = req.query;
     if (ids) {
       const idList = String(ids)
