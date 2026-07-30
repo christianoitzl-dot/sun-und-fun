@@ -1067,7 +1067,7 @@ function RegistrationForm({ loaded, onSubmitted }) {
                   </div>
                 </Field>
 
-                <Field label="Anzahl Kinder (bis 14 Jahre)">
+                <Field label="Anzahl Kinder">
                   <div className="stepper">
                     <button type="button" onClick={() => set("kids", Math.max(0, Number(f.kids) - 1))}>
                       −
@@ -1137,7 +1137,7 @@ function RegistrationForm({ loaded, onSubmitted }) {
           {status === "error" && <p className="form-error">Das Speichern hat nicht geklappt. Bitte versuch es nochmal.</p>}
 
           <button className="btn btn-primary big" onClick={submit} disabled={status === "saving" || !loaded}>
-            {status === "saving" ? "Wird gesendet…" : "Anmeldung absenden"}
+            {status === "saving" ? "Wird gesendet…" : f.attending === "no" ? "Abmeldung senden" : "Anmeldung senden"}
           </button>
 
           <p className="privacy">Deine Angaben werden nur für die Organisation der Feier verwendet.</p>
@@ -1368,7 +1368,7 @@ function AdminDashboard({ settings, setSettings, onBack, adminPw }) {
           <div className="stat-grid">
             <Stat big label="Personen gesamt" value={stats.totalPeople} sub="Erwachsene + Kinder" />
             <Stat label="Erwachsene" value={stats.adults} sub="inkl. Partner" />
-            <Stat label="Kinder" value={stats.children} sub="bis 14 Jahre" />
+            <Stat label="Kinder" value={stats.children} sub="Kinder gesamt" />
           </div>
           <div className="stat-grid stat-grid-2">
             <Stat label="Zusagen" value={yes.length} />
